@@ -1,4 +1,4 @@
-iimport discord
+import discord
 from discord.ext import commands
 import os
 import time
@@ -159,3 +159,104 @@ async def gestion_service(ctx, action: str):
     if action.lower() == "start":
         if user_id in db_services:
             await ctx.send("⚠️ Vous êtes déjà en service !")
+            return
+        
+        db_services[user_id] = time.time()
+        if en_service_role:
+            try:
+                await ctx.author.add_roles(en_service_role)
+            except discord.Forbidden:
+                print("[ERREUR] Permissions insuffisantes pour le rôle de service.")
+        await ctx.send("🚔 **Prise de service validée.** Bon courage !")
+
+    elif action.lower() == "end":
+        if user_id not in db_services:
+            await ctx.send("⚠️ Vous n'étiez pas en service.")
+            return
+        
+        debut = db_services.pop(user_id)
+        fin = time.time()
+        temps_minutes = max(1, int((fin - debut) / 60))
+        
+        salaire = temps_minutes * 10
+        xp_gagne = temps_minutes * 5
+        
+        user["argent"] += salaire
+        user["xp_gendarme"] += xp_gagne
+        
+        if en_service_role:
+            try:
+                await ctx.author.remove_roles(en_service_role)
+            except discord.Forbidden:
+                pass
+            
+        embed = discord.Embed(title="🧾 RAPPORT DE FIN DE SERVICE", color=discord.Color.gold())
+        embed.add_field(name="Temps effectué", value=f"{temps_minutes} minute(s)", inline=False)
+        embed.add_field(name="Salaire versé", value=f"{salaire}$", inline=True)
+        embed.add_field(name="XP Faction", value=f"+{xp_gagne} XP", inline=True)
+        await ctx.send(embed=embed)
+
+@bot.command(name="carriere")
+async def afficher_carriere(ctx):
+    user = get_or_create_user(ctx.author.id)
+    embed = discord.Embed(title="🎖️ Évolution de Carrière Gendarmerie", color=discord.Color.teal())
+    embed.add_field(name="Grade Actuel", value=user["grade_gendarme"], inline=True)
+    embed.add_field(name="Points d'Expérience", value=f"{user['xp_gendarme']} XP", inline=True)
+    await ctx.send(embed=embed)
+
+# ==============================================================================
+# 🚔 MODULE INTERVENTIONS GENDARMERIE
+# ==============================================================================
+
+@bot.command(name="enlever-points")
+@commands.has_any_role(ROLE_GENDARME_ID)
+async def enlever_points(ctx, member: discord.Member, points: int, *, raison: str):
+    user = get_or_create_user(member.id)
+    if not user["permis"]:
+        await ctx.send("❌ Cet individu n'a pas le permis de conduire.")
+        return
+        
+    user["points"] -= points
+    msg = f"👮 Le Gendarme **{ctx.author.display_name}** a retiré **{points} points** à {member.mention}.\n**Raison :** {raison}\n"
+    
+    if user["points"] <= 0:
+        user["points"] = 0
+        user["suspendu_jusqua"] = datetime.now() + timedelta(days=7)
+        msg += "🛑 **Le permis a été automatiquement SUSPENDU pour 7 jours !**"
+        
+    await ctx.send(msg)
+
+@bot.command(name="suspendre-permis")
+@commands.has_any_role(ROLE_GENDARME_ID)
+async def suspendre_permis(ctx, member: discord.Member, jours: int, *, raison: str):
+    user = get_or_create_user(member.id)
+    if not user["permis"]:
+        await ctx.send("❌ Cet individu n'a pas de permis valide à suspendre.")
+        return
+        
+    user["suspendu_jusqua"] = datetime.now() + timedelta(days=jours)
+    
+    embed = discord.Embed(title="🛑 RETRAIT IMMÉDIAT DU PERMIS", color=discord.Color.dark_red())
+    embed.add_field(name="Contrevenant", value=member.mention, inline=True)
+    embed.add_field(name="Agent", value=ctx.author.display_name, inline=True)
+    embed.add_field(name="Durée de rétention", value=f"{jours} jours", inline=True)
+    embed.add_field(name="Motif", value=raison, inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name="donner-permis")
+async def donner_permis(ctx, member: discord.Member):
+    user = get_or_create_user(member.id)
+    user["permis"] = True
+    user["points"] = 12
+    user["suspendu_jusqua"] = None
+    await ctx.send(f"🚗 Le permis de conduire de {member.mention} a été validé avec succès (12/12 pts).")
+
+# ==============================================================================
+# 🚀 CONNEXION DU BOT
+# ==============================================================================
+token = os.environ.get("DISCORD_TOKEN")
+if token:
+    bot.run(token)
+else:
+    print("❌ Erreur critique : La variable d'environnement DISCORD_TOKEN n'a pas été trouvée.")
