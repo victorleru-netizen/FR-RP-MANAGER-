@@ -18,26 +18,26 @@ def home():
 
 def run_web_server():
     port = int(os.environ.get("PORT", 3000))
-    # Utilisation de Waitress pour un déploiement propre sans warning
     serve(app, host='0.0.0.0', port=port)
 
 # Lancement du serveur web dans un thread séparé
 Thread(target=run_web_server).start()
 
 # ==============================================================================
-# 🤖 CONFIGURATION DES INTENTS ET DU BOT
+# 🤖 CONFIGURATION DES INTENTS ET DU BOT (Préfixe : .)
 # ==============================================================================
 intents = discord.Intents.default()
-intents.message_content = True  # Obligatoire pour lire les commandes en prefix /
-intents.members = True          # Obligatoire pour interagir avec les membres et les rôles
+intents.message_content = True  
+intents.members = True          
 
-bot = commands.Bot(command_prefix="/", intents=intents)
+# Le préfixe est désormais le point "." pour éviter les conflits avec le "/" de Discord
+bot = commands.Bot(command_prefix=".", intents=intents)
 
 # 💾 STOCKAGE TEMPORAIRE (Données des joueurs)
 db_users = {}
 db_services = {}
 
-# 🔒 CONFIGURATION DES ROLES (Remplacer par tes vrais IDs dans Discord)
+# 🔒 CONFIGURATION DES ROLES (À remplacer par tes vrais IDs)
 ROLE_GENDARME_ID = 123456789012345678  
 ROLE_EN_SERVICE_ID = 876543210987654321  
 
@@ -60,21 +60,17 @@ def get_or_create_user(user_id):
 async def on_ready():
     print("----------------------------------------")
     print(f"Connecté avec succès en tant que : {bot.user.name}")
-    print("Le bot écoute et lit les commandes.")
+    print("Le bot écoute désormais les commandes commençant par un point '.'")
     print("----------------------------------------")
 
-# 🔥 LE CORRECTIF CRUCIAL : Traiter les messages pour exécuter les commandes
 @bot.event
 async def on_message(message):
-    # Ignorer les messages du bot lui-même
     if message.author == bot.user:
         return
         
-    # Permet de voir dans les logs de Render si le bot "entend" le chat
-    if message.content.startswith("/"):
+    if message.content.startswith("."):
         print(f"[LOG] Commande détectée : {message.content} par {message.author.name}")
         
-    # Cette ligne indique au bot de chercher si le message correspond à une commande ci-dessous
     await bot.process_commands(message)
 
 # ==============================================================================
@@ -130,7 +126,7 @@ async def afficher_permis(ctx, member: discord.Member = None):
 
 @bot.command(name="service")
 async def gestion_service(ctx, action: str):
-    """Gère les prises et fins de service (/service start ou /service end)."""
+    """Gère les prises et fins de service (.service start ou .service end)."""
     user_id = ctx.author.id
     user = get_or_create_user(user_id)
     
@@ -151,8 +147,8 @@ async def gestion_service(ctx, action: str):
             try:
                 await ctx.author.add_roles(en_service_role)
             except discord.Forbidden:
-                print("[ERREUR] Le bot n'a pas les permissions de donner le rôle de service.")
-        await ctx.send("🚔 **Prise de service validée.** Bon courage, les citoyens comptent sur vous !")
+                print("[ERREUR] Le bot manque de permissions pour attribuer le rôle de service.")
+        await ctx.send("🚔 **Prise de service validée.** Bon courage, restez prudents !")
 
     elif action.lower() == "end":
         if user_id not in db_services:
@@ -163,7 +159,6 @@ async def gestion_service(ctx, action: str):
         fin = time.time()
         temps_minutes = int((fin - debut) / 60)
         
-        # Sécurité pour les tests rapides (si 0 minute passée, on donne quand même une base)
         if temps_minutes == 0:
             temps_minutes = 1
         
@@ -191,101 +186,4 @@ async def afficher_carriere(ctx):
     user = get_or_create_user(ctx.author.id)
     embed = discord.Embed(title="🎖️ Évolution de Carrière Gendarmerie", color=discord.Color.teal())
     embed.add_field(name="Grade Actuel", value=user["grade_gendarme"], inline=True)
-    embed.add_field(name="Points d'Expérience", value=f"{user['xp_gendarme']} XP", inline=True)
-    await ctx.send(embed=embed)
-
-# ==============================================================================
-# 🚔 MODULE INTERVENTIONS GENDARMERIE
-# ==============================================================================
-
-@bot.command(name="enlever-points")
-@commands.has_any_role(ROLE_GENDARME_ID)
-async def enlever_points(ctx, member: discord.Member, points: int, *, raison: str):
-    """Retire des points à un civil (Réservé Gendarmerie)."""
-    user = get_or_create_user(member.id)
-    
-    if not user["permis"]:
-        await ctx.send("❌ Cet individu n'a pas le permis de conduire.")
-        return
-        
-    user["points"] -= points
-    msg = f"👮 Le Gendarme **{ctx.author.display_name}** a retiré **{points} points** à {member.mention}.\n**Raison :** {raison}\n"
-    
-    if user["points"] <= 0:
-        user["points"] = 0
-        user["suspendu_jusqua"] = datetime.now() + timedelta(days=7)
-        msg += "🛑 **Le permis a été automatiquement SUSPENDU pour solde de points nul (7 jours) !**"
-        
-    await ctx.send(msg)
-
-@bot.command(name="suspendre-permis")
-@commands.has_any_role(ROLE_GENDARME_ID)
-async def suspendre_permis(ctx, member: discord.Member, jours: int, *, raison: str):
-    """Suspend immédiatement le permis d'un individu pour X jours (Réservé Gendarmerie)."""
-    user = get_or_create_user(member.id)
-    
-    if not user["permis"]:
-        await ctx.send("❌ Cet individu n'a pas de permis valide à suspendre.")
-        return
-        
-    user["suspendu_jusqua"] = datetime.now() + timedelta(days=jours)
-    
-    embed = discord.Embed(title="🛑 RETRAIT IMMÉDIAT DU PERMIS", color=discord.Color.dark_red())
-    embed.add_field(name="Contrevenant", value=member.mention, inline=True)
-    embed.add_field(name="Agent", value=ctx.author.display_name, inline=True)
-    embed.add_field(name="Durée de rétention", value=f"{jours} jours", inline=True)
-    embed.add_field(name="Motif", value=raison, inline=False)
-    
-    await ctx.send(embed=embed)
-
-@bot.command(name="donner-permis")
-async def donner_permis(ctx, member: discord.Member):
-    """Attribue le permis de conduire à un joueur (Simule l'auto-école)."""
-    user = get_or_create_user(member.id)
-    user["permis"] = True
-    user["points"] = 12
-    user["suspendu_jusqua"] = None
-    await ctx.send(f"🚗 Le permis de conduire de {member.mention} a été validé avec succès (12/12 pts).")
-
-# ==============================================================================
-# 📜 L'INDEX DES COMMANDES (/cmds)
-# ==============================================================================
-
-@bot.command(name="cmds")
-async def liste_commandes(ctx):
-    """Affiche l'aide de toutes les commandes disponibles."""
-    embed = discord.Embed(
-        title="📜 INDEX DES COMMANDES DE L'ADMINISTRATION RP", 
-        description="Voici la liste complète des intéractions. *Rappel : Tapez les commandes en entier, elles n'apparaissent pas dans la liste automatique de Discord.*",
-        color=discord.Color.blurple()
-    )
-    
-    embed.add_field(
-        name="👤 Pôle Citoyen", 
-        value="`/creer-identite [Prenom] [Nom]` • Crée ton identité civile\n`/carte-identite` • Visualise tes papiers d'identité\n`/permis` • Vérifie ton code et tes points restants", 
-        inline=False
-    )
-    
-    embed.add_field(
-        name="💼 Pôle Faction / Métier", 
-        value="`/service start` • Entre en service actif (lance le compteur)\n`/service end` • Termine ton service (reçois ton salaire et ton XP)\n`/carriere` • Regarde ton grade et ton expérience", 
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🚔 Pôle Gendarmerie (Requiert le rôle)", 
-        value="`/donner-permis [@joueur]` • Enregistre le permis d'un citoyen\n`/enlever-points [@joueur] [nb] [raison]` • Sanction routière\n`/suspendre-permis [@joueur] [jours] [raison]` • Rétention du permis", 
-        inline=False
-    )
-    
-    embed.set_footer(text="FR RP MANAGER • Système d'administration automatisé.")
-    await ctx.send(embed=embed)
-
-# ==============================================================================
-# 🚀 CONNEXION DU BOT
-# ==============================================================================
-token = os.environ.get("DISCORD_TOKEN")
-if token:
-    bot.run(token)
-else:
-    print("❌ Erreur critique : La variable d'environnement DISCORD_TOKEN n'a pas été trouvée.")
+    embed.add_field
