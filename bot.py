@@ -31,7 +31,7 @@ intents.message_content = True
 intents.members = True
 intents.presences = True
 
-bot = commands.Bot(command_prefix="+", intents=intents)
+bot = commands.Bot(command_prefix="+", intents=intents, help_command=None)
 
 # Variables de configuration des salons
 auto_rank_channel_id = None
@@ -71,7 +71,28 @@ async def on_presence_update(before, after):
     else:
         await channel.send(f"{after.member.mention} Ta pas ton statut ! 🪐")
 
-# Commandes Modération & Configuration
+# Commandes du Bot
+
+@bot.command(name="cmds")
+async def cmds(ctx):
+    """Affiche la liste des commandes et leur utilisation"""
+    msg = (
+        "🪐 **Liste des commandes du bot Empire Astral** 🪐\n\n"
+        "**Modération :**\n"
+        "• `+ban [user] [raison]` : Banni un membre du serveur pour 7 jours.\n"
+        "• `+bl [user] [raison]` : Banni définitivement un membre (Blacklist).\n"
+        "• `+deban [id]` : Débanni un membre grâce à son ID.\n"
+        "• `+mute [user] [durée] [raison]` : Rend muet un membre (durée ex: 10m, 1h, 2j).\n"
+        "• `+unmute [user] [raison]` : Retire le mute d'un membre.\n\n"
+        "**Gestion des salons :**\n"
+        "• `+lock` : Verrouille le salon actuel.\n"
+        "• `+unlock` : Déverrouille le salon actuel.\n\n"
+        "**Configuration :**\n"
+        "• `+active auto+rank [#salon]` : Définit le salon de vérification du statut Empire Astral.\n"
+        "• `+arrive [#salon]` : Définit le salon des messages de bienvenue.\n"
+        "• `+cmds` : Affiche ce menu d'aide."
+    )
+    await ctx.send(msg)
 
 @bot.command()
 @commands.has_permissions(ban_members=True)
